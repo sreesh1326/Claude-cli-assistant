@@ -5,6 +5,8 @@
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <sstream>
+#include <cstdio>
+#include <array>
 using namespace std;
 
 using json = nlohmann::json;
@@ -70,6 +72,23 @@ int main(int argc, char* argv[]) {
                         }}
                     }},
                     {"required", json::array({"file_path", "content"})}
+                }}
+            }}
+        },
+        {
+            {"type", "function"},
+            {"function", {
+                {"name", "Bash"},
+                {"description", "Execute a shell command"},
+                {"parameters", {
+                    {"type", "object"},
+                    {"properties", {
+                        {"command", {
+                            {"type", "string"},
+                            {"description", "The command to execute"}
+                        }}
+                    }},
+                    {"required", json::array({"command"})}
                 }}
             }}
         }
@@ -161,6 +180,31 @@ int main(int argc, char* argv[]) {
                     {"role", "tool"},
                     {"tool_call_id", tool_call["id"]},
                     {"content", "Successfully wrote to " + file_path}
+                });
+            } else if (func_name == "Bash") {
+                std::string command = arguments["command"].get<std::string>();
+
+                // Execute the command and capture output
+                std::string output;
+                std::array<char, 256> buf;
+                FILE* pipe = popen(command.c_str(), "r");
+                if (!pipe) {
+                    std::cerr << "Failed to execute command: " << command << std::endl;
+                    return 1;
+                }
+                while (fgets(buf.data(), buf.size(), pipe) != nullptr) {
+                    output += buf.data();
+                }
+                int exit_code = pclose(pipe);
+
+                std::string result_content = "Exit code: " + std::to_string(exit_code) + "\n" + output;
+
+                // Add assistant message and tool result to messages for next iteration
+                messages.push_back(message);
+                messages.push_back({
+                    {"role", "tool"},
+                    {"tool_call_id", tool_call["id"]},
+                    {"content", result_content}
                 });
             }
         } else {
