@@ -8,4 +8,4 @@
 
 set -e # Exit on failure
 
-exec $(dirname "$0")/build/claude-code -p "prompt"
+exec "$(dirname "$0")/../build/claude-code" -p "prompt"

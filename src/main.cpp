@@ -26,9 +26,11 @@ int main(int argc, char* argv[]) {
 
     const char* api_key_env = getenv("OPENROUTER_API_KEY");
     const char* base_url_env = getenv("OPENROUTER_BASE_URL");
+    const char* model_env = getenv("OPENROUTER_MODEL");
 
     string api_key = api_key_env ? api_key_env : "";
     string base_url = base_url_env ? base_url_env : "https://openrouter.ai/api/v1";
+    string model = model_env ? model_env : "openrouter/free";
 
     if (api_key.empty()) {
         cerr << "OPENROUTER_API_KEY is not set" << endl;
@@ -101,7 +103,7 @@ int main(int argc, char* argv[]) {
 
     while (true) {
         json request_body = {
-            {"model", "anthropic/claude-haiku-4.5"},
+            {"model", model},
             {"messages", messages},
             {"tools", tools}
         };
@@ -117,6 +119,7 @@ int main(int argc, char* argv[]) {
 
         if (response.status_code != 200) {
             cerr << "HTTP error: " << response.status_code << endl;
+            cerr << response.text << endl;
             return 1;
         }
 
