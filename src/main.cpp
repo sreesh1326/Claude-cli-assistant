@@ -30,7 +30,7 @@ int main(int argc, char* argv[]) {
 
     string api_key = api_key_env ? api_key_env : "";
     string base_url = base_url_env ? base_url_env : "https://openrouter.ai/api/v1";
-    string model = model_env ? model_env : "openrouter/free";
+    string model = model_env ? model_env : "meta-llama/llama-3.2-3b-instruct:free";
 
     if (api_key.empty()) {
         cerr << "OPENROUTER_API_KEY is not set" << endl;
