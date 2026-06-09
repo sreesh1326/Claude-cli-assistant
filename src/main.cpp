@@ -1,17 +1,27 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <vector>
 #include <cpr/cpr.h>
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <sstream>
 #include <cstdio>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 using namespace std;
 using namespace cpr;
 
 using json = nlohmann::json;
 
 int main(int argc, char* argv[]) {
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+#endif
+
     if (argc < 3 || string(argv[1]) != "-p") {
         cerr << "Expected first argument to be '-p'" << endl;
         return 1;
@@ -30,7 +40,20 @@ int main(int argc, char* argv[]) {
 
     string api_key = api_key_env ? api_key_env : "";
     string base_url = base_url_env ? base_url_env : "https://openrouter.ai/api/v1";
-    string model = model_env ? model_env : "meta-llama/llama-3.2-3b-instruct:free";
+    vector<string> candidate_models;
+    if (model_env) {
+        candidate_models.push_back(model_env);
+    } else {
+        candidate_models = {
+            "openai/gpt-oss-120b:free",
+            "google/gemma-4-31b-it:free",
+            "z-ai/glm-4.5-air:free",
+            "poolside/laguna-m.1:free",
+            "qwen/qwen3-coder:free",
+            "meta-llama/llama-3.3-70b-instruct:free"
+        };
+    }
+    string active_model = "";
 
     if (api_key.empty()) {
         cerr << "OPENROUTER_API_KEY is not set" << endl;
@@ -102,23 +125,58 @@ int main(int argc, char* argv[]) {
     });
 
     while (true) {
-        json request_body = {
-            {"model", model},
-            {"messages", messages},
-            {"tools", tools}
-        };
+        Response response;
+        bool success = false;
 
-        Response response = Post(
-            Url{base_url + "/chat/completions"},
-            Header{
-                {"Authorization", "Bearer " + api_key},
-                {"Content-Type", "application/json"}
-            },
-            Body{request_body.dump()}
-        );
+        if (!active_model.empty()) {
+            json request_body = {
+                {"model", active_model},
+                {"messages", messages},
+                {"tools", tools}
+            };
+            response = Post(
+                Url{base_url + "/chat/completions"},
+                Header{
+                    {"Authorization", "Bearer " + api_key},
+                    {"Content-Type", "application/json"}
+                },
+                Body{request_body.dump()}
+            );
+            if (response.status_code == 200) {
+                success = true;
+            } else {
+                cerr << "Active model " << active_model << " failed (" << response.status_code << "). Falling back..." << endl;
+                active_model = "";
+            }
+        }
 
-        if (response.status_code != 200) {
-            cerr << "HTTP error: " << response.status_code << endl;
+        if (active_model.empty()) {
+            for (const auto& candidate : candidate_models) {
+                json request_body = {
+                    {"model", candidate},
+                    {"messages", messages},
+                    {"tools", tools}
+                };
+                response = Post(
+                    Url{base_url + "/chat/completions"},
+                    Header{
+                        {"Authorization", "Bearer " + api_key},
+                        {"Content-Type", "application/json"}
+                    },
+                    Body{request_body.dump()}
+                );
+                if (response.status_code == 200) {
+                    active_model = candidate;
+                    success = true;
+                    break;
+                } else {
+                    cerr << "Candidate model " << candidate << " failed (" << response.status_code << ")." << endl;
+                }
+            }
+        }
+
+        if (!success) {
+            cerr << "All candidate models failed." << endl;
             cerr << response.text << endl;
             return 1;
         }
@@ -130,7 +188,6 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        // You can use print statements as follows for debugging, they'll be visible when running tests.
         cerr << "Logs from your program will appear here!" << endl;
 
         json message = result["choices"][0]["message"];
@@ -155,7 +212,6 @@ int main(int argc, char* argv[]) {
                 buffer << file.rdbuf();
                 string file_content = buffer.str();
 
-                // Add assistant message and tool result to messages for next iteration
                 messages.push_back(message);
                 messages.push_back({
                     {"role", "tool"},
@@ -167,7 +223,6 @@ int main(int argc, char* argv[]) {
                 string file_path = arguments["file_path"].get<string>();
                 string content = arguments["content"].get<string>();
 
-                // Write content to the file
                 ofstream file(file_path);
                 if (!file.is_open()) {
                     cerr << "Could not open file for writing: " << file_path << endl;
